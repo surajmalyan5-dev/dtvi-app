@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Digital Twin Vision Inspector</title>
+<style>
+    *{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:Arial, sans-serif;
+}
+
+body{
+    background:#0f172a;
+    color:white;
+}
+
+header{
+    background:#111827;
+    padding:20px;
+    text-align:center;
+    border-bottom:2px solid #2563eb;
+}
+
+header h1{
+    color:#60a5fa;
+}
+
+header p{
+    margin-top:8px;
+    color:#cbd5e1;
+}
+
+.dashboard{
+    padding:20px;
+}
+
+.cards{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:20px;
+}
+
+.card{
+    background:#1e293b;
+    padding:20px;
+    border-radius:12px;
+    box-shadow:0 0 10px rgba(0,0,0,.3);
+}
+
+.card h3{
+    margin-bottom:10px;
+    color:#38bdf8;
+}
+
+.status{
+    font-size:22px;
+    font-weight:bold;
+}
+
+.green{
+    color:#22c55e;
+}
+
+.red{
+    color:#ef4444;
+}
+
+.section{
+    margin-top:30px;
+}
+
+.camera{
+    background:#1e293b;
+    padding:20px;
+    border-radius:12px;
+}
+
+.cam{
+    position:relative;
+}
+
+.camera video{
+    width:100%;
+    display:block;
+    border-radius:10px;
+    background:#000;
+    min-height:200px;
+}
+
+.cam canvas{
+    position:absolute;
+    top:0;
+    left:0;
+    pointer-events:none;
+}
+
+#btn{
+    width:100%;
+    margin-top:14px;
+    padding:14px;
+    font-size:16px;
+    font-weight:bold;
+    border:0;
+    border-radius:10px;
+    background:#2563eb;
+    color:#fff;
+}
+
+#msg{
+    margin-top:8px;
+    font-size:13px;
+    color:#cbd5e1;
+    min-height:18px;
+}
+
+.alert-box{
+    background:#1e293b;
+    padding:20px;
+    border-radius:12px;
+}
+
+.alert{
+    padding:12px;
+    margin:10px 0;
+    border-left:5px solid red;
+    background:#334155;
+}
+
+footer{
+    text-align:center;
+    padding:20px;
+    margin-top:30px;
+    background:#111827;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<header>
+    <h1>Digital Twin Vision Inspector</h1>
+    <p>Made by NIT Kurukshetra Students</p>
+</header>
+
+<div class="dashboard">
+
+    <div class="cards">
+
+        <div class="card">
+            <h3>Machine Status</h3>
+            <div class="status green" id="machine">Operational</div>
+        </div>
+
+        <div class="card">
+            <h3>Defects Detected</h3>
+            <div class="status" id="defects">00</div>
+        </div>
+
+        <div class="card">
+            <h3>Inspection Accuracy</h3>
+            <div class="status" id="accuracy">100%</div>
+        </div>
+
+        <div class="card">
+            <h3>Digital Twin Sync</h3>
+            <div class="status green" id="sync">Active</div>
+        </div>
+
+    </div>
+
+    <div class="section">
+        <h2>Live Camera Feed</h2>
+        <br>
+
+        <div class="camera">
+            <div class="cam">
+                <video id="video" playsinline muted></video>
+                <canvas id="overlay"></canvas>
+            </div>
+            <button id="btn">Start Camera</button>
+            <div id="msg"></div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Inspection Alerts</h2>
+        <br>
+
+        <div class="alert-box" id="alerts">
+            <div class="alert">System Started</div>
+        </div>
+    </div>
+
+</div>
+
+<footer>
+    © 2026 Digital Twin Vision Inspector | NIT Kurukshetra
+</footer>
+<script>
+const $ = id => document.getElementById(id);
+const video = $("video"), overlay = $("overlay"), btn = $("btn"), msg = $("msg");
+const grab = document.createElement("canvas");
+grab.width = grab.height = 416;
+let running = false, stream = null;
+
+btn.onclick = async () => {
+    if (running) {
+        running = false;
+        stream.getTracks().forEach(t => t.stop());
+        btn.textContent = "Start Camera";
+        msg.textContent = "";
+        overlay.getContext("2d").clearRect(0, 0, overlay.width, overlay.height);
+        return;
+    }
+    if (!navigator.mediaDevices) {
+        msg.textContent = "Camera ke liye https link chahiye.";
+        return;
+    }
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "environment" } }, audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+        running = true;
+        btn.textContent = "Stop Camera";
+        msg.textContent = "Detecting...";
+        loop();
+    } catch (e) {
+        msg.textContent = "Camera permission allow karo.";
+    }
+};
+
+async function loop() {
+    while (running) {
+        try {
+            grab.getContext("2d").drawImage(video, 0, 0, 416, 416);
+            const blob = await new Promise(r => grab.toBlob(r, "image/jpeg", 0.7));
+            const fd = new FormData();
+            fd.append("file", blob, "frame.jpg");
+            const res = await fetch("/detect-frame", { method: "POST", body: fd });
+            draw(await res.json());
+            msg.textContent = "Detecting...";
+        } catch (e) {
+            msg.textContent = "Server se connect nahi ho paya.";
+        }
+        await new Promise(r => setTimeout(r, 100));
+    }
+}
+
+function draw(d) {
+    overlay.width = video.clientWidth;
+    overlay.height = video.clientHeight;
+    const c = overlay.getContext("2d");
+    const sx = overlay.width / 416, sy = overlay.height / 416;
+    c.lineWidth = 3;
+    c.font = "bold 14px Arial";
+    d.detections.forEach(b => {
+        const col = b.class === "OK" ? "#22c55e" : "#ef4444";
+        c.strokeStyle = col; c.fillStyle = col;
+        c.strokeRect(b.x1 * sx, b.y1 * sy, (b.x2 - b.x1) * sx, (b.y2 - b.y1) * sy);
+        c.fillText(b.class + " " + b.confidence, b.x1 * sx + 3, Math.max(14, b.y1 * sy - 5));
+    });
+}
+
+function esc(s) {
+    return String(s).replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+}
+
+async function refresh() {
+    try {
+        const d = await (await fetch("/dashboard")).json();
+        const m = $("machine");
+        m.textContent = d.machine_status;
+        m.className = "status " + (d.machine_status === "Operational" ? "green" : "red");
+        const df = $("defects");
+        df.textContent = String(d.defects_detected).padStart(2, "0");
+        df.className = "status " + (d.defects_detected > 0 ? "red" : "");
+        $("accuracy").textContent = d.inspection_accuracy + "%";
+        $("sync").textContent = d.digital_twin_sync;
+        const a = await (await fetch("/alerts")).json();
+        $("alerts").innerHTML = a.slice(-5).reverse()
+            .map(x => '<div class="alert">' + esc(x.message) + "</div>").join("");
+    } catch (e) {}
+}
+setInterval(refresh, 1000);
+refresh();
+</script>
+
+</body>
+</html>
